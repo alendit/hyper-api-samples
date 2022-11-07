@@ -7,6 +7,8 @@ __Current Version__: 1.0
 
 Cloud Database Extractor Utility - This sample shows how to extract data from a cloud database to a published hyper extract and append/update/delete rows to keep up to date.
 
+A detailed article about this utility is availabe at: https://www.tableau.com/developer/learning/how-synchronize-your-cloud-data-tableau-extracts-scale
+
 # Overview
 This package defines a standard Extractor Interface which is extended by specific implementations
 to support specific cloud databases.  For most use cases you will probably only ever call the
@@ -20,6 +22,7 @@ following methods:
 For a full list of methods and args see the docstrings in the BaseExtractor class.
 
 ## Contents
+* __azuresql_extractor.py__ - Azure SQL Database implementation of Base Hyper Extractor ABC
 * __base_extractor.py__ - provides an Abstract Base Class with some utility methods to extract from cloud databases to "live to hyper" Tableau Datasources. Database specific Extractor classes extend this to manage connections and schema discovery
 and may override the generic query processing methods based on DBAPIv2 standards with database specific optimizations.
 * __bigquery_extractor.py__ - Google BigQuery implementation of Base Hyper Extractor ABC
@@ -41,6 +44,7 @@ $ python3 extractor_cli.py --help
    {load_sample,export_load,append,update,delete}
    [--extractor {bigquery}]
    [--source_table_id SOURCE_TABLE_ID]
+   [--overwrite]
    [--tableau_project TABLEAU_PROJECT]
    --tableau_datasource TABLEAU_DATASOURCE
    [--tableau_hostname TABLEAU_HOSTNAME]
@@ -61,6 +65,64 @@ $ python3 extractor_cli.py --help
   - delete: Delete rows from a Tableau datasource that match key columns in a changeset from a query
 ```
 
+### Sample Usage
+Before use you should modify the file config.yml with your tableau and database settings.
+
+__Load Sample:__ Load a sample (default=1000 lines) from test_table to sample_extract in test_project:
+```console
+python3 extractor_cli.py load_sample --tableau_token_name hyperapitest --tableau_token_secretfile hyperapitest.token \
+  --source_table_id test_table --tableau_project test_project --tableau_datasource sample_extract
+```
+
+__Full Export:__ Load a full extract from test_table to full_extract in test_project:
+```console
+python extractor_cli.py export_load --tableau_token_name hyperapitest --tableau_token_secretfile hyperapitest.token \
+  --source_table_id "test_table" --tableau_project "test_project" --tableau_datasource "test_datasource"
+ ```
+
+
+__Append:__ Execute new_rows.sql to retrieve a changeset and append to test_datasource:
+```console
+# new_rows.sql:
+SELECT * FROM staging_table
+
+python extractor_cli.py update --tableau_token_name hyperapitest --tableau_token_secretfile hyperapitest.token \
+  --sqlfile new_rows.sql --tableau_project "test_project" --tableau_datasource "test_datasource"
+```
+
+__Update:__ Execute updated_rows.sql to retrieve a changeset and update test_datasource where primary key columns in changeset (METRIC_ID and METRIC_DATE) match corresponding columns in target datasource:
+```console
+# updated_rows.sql:
+SELECT * FROM source_table WHERE LOAD_TIMESTAMP<UPDATE_TIMESTAMP
+
+python extractor_cli.py update --tableau_token_name hyperapitest --tableau_token_secretfile hyperapitest.token \
+  --sqlfile updated_rows.sql --tableau_project "test_project" --tableau_datasource "test_datasource" \
+  --match_columns METRIC_ID METRIC_ID --match_columns METRIC_DATE METRIC_DATE
+```
+
+__Delete:__ Execute deleted_rows.sql to retrieve a changeset containing the primary key columns that identify which rows have been deleted.  a list of deleted rows.  Delete  full_extract where METRIC_ID and METRIC_DATE in changeset match corresponding columns in target datasource:
+```console
+# deleted_rows.sql:
+SELECT METRIC_ID, METRIC_DATE FROM source_table_deleted_rows
+
+python extractor_cli.py delete --tableau_token_name hyperapitest --tableau_token_secretfile hyperapitest.token \
+  --sqlfile deleted_rows.sql --tableau_project "test_project" --tableau_datasource "full_extract" \
+  --match_columns METRIC_ID METRIC_ID --match_columns METRIC_DATE METRIC_DATE
+```
+
+__Conditional Delete:__ In this example no changeset is provided - records to be deleted are identified using the conditions specified in delete_conditions.json
+```console
+# delete_conditions.json
+{
+        "op": "lt",
+        "target-col": "ORDER_DATE",
+        "const": {"type": "datetime", "v": "2018-02-01T00:00:00Z"}
+}
+
+python extractor_cli.py delete --tableau_token_name hyperapitest --tableau_token_secretfile hyperapitest.token \
+  --tableau_project "test_project" --tableau_datasource "full_extract" \
+  --match_conditions_json=delete_conditions.json
+```
 
 # Installation
 
@@ -103,6 +165,10 @@ cd hyper-api-samples/Community-Supported/clouddb-extractor
 pip install -r requirements.txt
 ```
 
+## Azure SQL Database Configuration
+The following steps are required if using azuresql_extractor.
+ - Install ODBC Drivers and Azure utilities for your platform using the following instructions: https://github.com/Azure-Samples/AzureSqlGettingStartedSamples/tree/master/python/Unix-based
+ 
 ## Google BigQuery Configuration
 The following steps are required if using bigquery_extractor.
 
